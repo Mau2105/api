@@ -1,48 +1,53 @@
 <?php
-require_once __DIR__ . '/../config.php';
 
 class AuthController {
-    
+
     public function login() {
-        global $conexion;
-        $input = json_decode(file_get_contents('php://input'), true);
 
-        $email = $conexion->real_escape_string(trim($input['email'] ?? ''));
-        $password = trim($input['password'] ?? '');
+        require_once __DIR__ . '/../config/database.php';
 
-        if (empty($email) || empty($password)) {
-            json_response(false, "Email y contraseña son obligatorios", null, 400);
-        }
+        $data = json_decode(file_get_contents("php://input"), true);
 
-        $sql = "SELECT id_usuario, nombre, rol FROM usuarios 
-                WHERE email = '$email' AND password = '$password' LIMIT 1";
+        $email = $data['email'] ?? null;
+        $password = $data['password'] ?? null;
 
-        $result = $conexion->query($sql);
-
-        if ($result && $result->num_rows > 0) {
-            $user = $result->fetch_assoc();
-
-            $payload = [
-                'id'     => (int)$user['id_usuario'],
-                'rol'    => $user['rol'],
-                'nombre' => $user['nombre'],
-                'exp'    => time() + (60 * 60 * 24 * 7)   // 7 días de validez
-            ];
-
-            require_once __DIR__ . '/../jwt.php';
-            $token = JWT::encode($payload);
-
-            json_response(true, "Inicio de sesión exitoso", [
-                'token' => $token,
-                'user'  => [
-                    'id'     => (int)$user['id_usuario'],
-                    'nombre' => $user['nombre'],
-                    'rol'    => $user['rol']
-                ]
+        if (!$email || !$password) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Datos incompletos"
             ]);
-        } else {
-            json_response(false, "Email o contraseña incorrectos", null, 401);
+            return;
         }
+
+        $query = "SELECT * FROM usuarios WHERE email = $1";
+        $result = pg_query_params($conn, $query, [$email]);
+
+        if (!$result || pg_num_rows($result) === 0) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Usuario no encontrado"
+            ]);
+            return;
+        }
+
+        $user = pg_fetch_assoc($result);
+
+        if ($password !== $user['password']) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Credenciales incorrectas"
+            ]);
+            return;
+        }
+
+        echo json_encode([
+            "success" => true,
+            "user" => [
+                "id" => (int)$user["id_usuario"],
+                "nombre" => $user["nombre"],
+                "rol" => $user["rol"]
+            ],
+            "token" => bin2hex(random_bytes(16))
+        ]);
     }
 }
-?>
